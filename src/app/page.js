@@ -40,21 +40,42 @@ export default function Home() {
         }
         fullHistory += "### User Message\n" + sanitized + "\n\n### Assistant\n";
         try {
-            await llamapi.prompt({
-                prompt: fullHistory,
-                stream: true
-            }, (responseChunk) => {
-                if (responseChunk !== "[[[[[STOP]]]]]") {
-                    outputRef.current += responseChunk;
-                    setOutputState(outputRef.current);
-                } else {
-                    let aiOutput = outputRef.current;
-                    outputRef.current = '';
-                    setOutputState('');
-
-                    setChats(prev => [...prev, `AI: ${aiOutput}`]);
+            const response = await fetch('/api/llm', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  prompt: fullHistory,
+                  stream: true,
+                })
+              });
+            
+              const reader = response.body.getReader();
+              let receivedLength = 0; // bytes received by now
+              let chunks = []; // array of received binary chunks (comprises the body)
+              while(true) {
+                const {done, value} = await reader.read();
+            
+                if (done) {
+                  break;
                 }
-            });
+                console.log(value);
+                chunks.push(value);
+                receivedLength += value.length;
+            
+                let chunkText = new TextDecoder("utf-8").decode(value, {stream: true});
+                if (chunkText !== "[[[[[STOP]]]]]") {
+                  outputRef.current += chunkText;
+                  setOutputState(outputRef.current);
+                } else {
+                  let aiOutput = outputRef.current;
+                  outputRef.current = '';
+                  setOutputState('');
+            
+                  setChats(prev => [...prev, `AI: ${aiOutput}`]);
+                }
+              }
         } catch (error) {
             console.log("ERROR: " + error);
         }

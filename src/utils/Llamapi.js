@@ -1,104 +1,122 @@
-export class Llamapi {
-    constructor() {
-      this.endpoint = "http://192.168.122.1:8080/completion";
-    }
-  
-    async prompt({ prompt, stream = false }, outputCallback) {
-      const controller = new AbortController();
-      try {
-        const response = await fetch(this.endpoint, {
-          method: 'POST',
-          body: JSON.stringify({
-            prompt: prompt,
-            stream: stream
-          }),
-          signal: controller.signal
-        });
-  
-        if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-  
-        if (stream) {
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder('utf-8');
-          let buffer = '';
-  
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            
-            const decodedChunk = decoder.decode(value, { stream: true });
-            buffer += decodedChunk;
-  
-            let parts = buffer.split('\ndata:');
-            buffer = parts.pop(); // Retain last incomplete part
-  
-            parts.forEach(part => {
-              let cleanedPart = part.replace(/^data:\s*/, '').trim();
-              if (cleanedPart) {
-                try {
-                  const jsonData = JSON.parse(cleanedPart);
-                  if (jsonData.stop === false) {
-                    outputCallback(jsonData.content);
-                  }
-                } catch (err) {
-                  console.error(`Error parsing JSON part: ${err.message}`);
-                }
-              }
-            });
-          }
-          
-          // Process any remaining buffer
-          if (buffer.trim()) {
-            try {
-              const jsonData = JSON.parse(buffer.replace(/^data:\s*/, '').trim());
-              if (jsonData.stop === false) {
-                outputCallback(jsonData.content);
-              }
-            } catch (err) {
-              console.error(`Error parsing final JSON part: ${err.message}`);
-            }
-          }
-        } else {
-          return response.json();
-        }
-      } catch (error) {
-        console.error('Error fetching data:', error);
-      } finally {
-        controller.abort();
-        outputCallback("[[[[[STOP]]]]]");
-      }
-    }
+class AsyncQueue {
+  constructor() {
+    this.items = [];
+    this.resolver = null;
+    this.rejected = false;
+  }
 
-    fixJson(jsonString) {
-        // Fix missing double quotes around keys or string values
-        jsonString = jsonString.replace(/([\{\s,])(\w+)(:)/g, '$1"$2"$3');
-        jsonString = jsonString.replace(/:\s*(\w+)([,\s}])/g, ': "$1"$2');
-    
-        // Ensure proper closing of opened brackets and braces
-        const openBrackets = {'{': '}', '[': ']'};
-        const stack = [];
-        let fixedJson = '';
-        for (let char of jsonString) {
-            if (openBrackets[char]) {
-                stack.push(openBrackets[char]);
-                fixedJson += char;
-            } else if (stack.length > 0 && char === stack[stack.length - 1]) {
-                stack.pop();
-                fixedJson += char;
-            } else {
-                fixedJson += char;
-            }
-        }
-    
-        // Close any unclosed brackets or braces
-        while (stack.length > 0) {
-            fixedJson += stack.pop();
-        }
-    
-        return fixedJson;
+  push(item) {
+    if (this.resolver) {
+      this.resolver(item);
+      this.resolver = null;
+    } else {
+      this.items.push(item);
     }
-      
+  }
+
+  next() {
+    return new Promise((resolve, reject) => {
+      if (this.items.length > 0) {
+        resolve(this.items.shift());
+      } else if (this.rejected) {
+        reject(new Error("Stream ended unexpectedly."));
+      } else {
+        this.resolver = resolve;
+      }
+    });
+  }
+
+  end() {
+    this.rejected = true;
+    if (this.resolver) {
+      this.resolver({ done: true });
+    }
+  }
 }
-  
+
+export class Llamapi {
+  constructor(endpoint) {
+    this.endpoint = endpoint;
+  }
+
+  async prompt({ prompt, stream = false }, outputQueue) {
+    const controller = new AbortController();
+    try {
+      const response = await fetch(this.endpoint, {
+        method: 'POST',
+        body: JSON.stringify({ prompt, stream }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      if (stream) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const decodedChunk = decoder.decode(value, { stream: true });
+          buffer += decodedChunk;
+
+          let parts = buffer.split('\ndata:');
+          buffer = parts.pop(); // Retain last incomplete part
+
+          parts.forEach(part => {
+            let cleanedPart = part.replace(/^data:\s*/, '').trim();
+            if (cleanedPart) {
+              try {
+                const jsonData = JSON.parse(cleanedPart);
+                if (!jsonData.stop) {
+                  outputQueue.push(jsonData.content);
+                }
+              } catch (err) {
+                console.error(`Error parsing JSON part: ${err.message}`);
+              }
+            }
+          });
+        }
+
+        // Process any remaining buffer
+        if (buffer.trim()) {
+          try {
+            const jsonData = JSON.parse(buffer.replace(/^data:\s*/, '').trim());
+            if (!jsonData.stop) {
+              outputQueue.push(jsonData.content);
+            }
+          } catch (err) {
+            console.error(`Error parsing final JSON part: ${err.message}`);
+          }
+        }
+      } else {
+        const result = await response.json();
+        outputQueue.push(result);
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      controller.abort();
+      outputQueue.end();
+    }
+  }
+
+  async *generateDataStream(prompt, stream) {
+    const outputQueue = new AsyncQueue();
+    this.prompt({ prompt, stream }, outputQueue);
+
+    try {
+      let result;
+      while (!(result = await outputQueue.next()).done) {
+        yield result;
+      }
+      yield "[[[[[STOP]]]]]";
+    } catch (err) {
+      console.error("Stream error:", err);
+    }
+  }
+}
