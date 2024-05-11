@@ -5,8 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Llamapi } from '../utils/Llamapi';
 import { formatChat } from '@/utils/formatting';
 
-const llamapi = new Llamapi(process.env.LOCAL_LLAMA);
-
+const llamapi = new Llamapi();
 export default function Home() {
     const [chats, setChats] = useState([]);
     const [prompt, setPrompt] = useState('');

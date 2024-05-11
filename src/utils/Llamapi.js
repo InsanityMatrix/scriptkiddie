@@ -1,6 +1,6 @@
 export class Llamapi {
-    constructor(endpoint) {
-      this.endpoint = endpoint;
+    constructor() {
+      this.endpoint = "http://192.168.122.1:8080/completion";
     }
   
     async prompt({ prompt, stream = false }, outputCallback) {
@@ -8,9 +8,6 @@ export class Llamapi {
       try {
         const response = await fetch(this.endpoint, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
           body: JSON.stringify({
             prompt: prompt,
             stream: stream
