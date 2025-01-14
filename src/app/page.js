@@ -127,10 +127,9 @@ export default function Home() {
                   console.error('Error:', error);
                 }
               }
+              setChats(prev => [...prev, `AI: ${aiOutput}`]);
               outputRef.current = '';
               setOutputState('');
-              
-              setChats(prev => [...prev, `AI: ${aiOutput}`]);
             }
           }
       } catch (error) {
