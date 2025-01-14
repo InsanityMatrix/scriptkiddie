@@ -39,12 +39,12 @@ export default function Home() {
         setOutputState('');
         const sanitized = prompt.endsWith(':') ? prompt : prompt + ':';
 
-        let fullHistory = '### System Prompt\nYou are an intelligent programming assistant. If you are asked to run a script, or run a script on a file- you will add [[[RUNNING SCRIPT]]] to the end of your response.\n\n';
+        let fullHistory = '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\nYou are an intelligent programming assistant. If you are asked to run a script, or run a script on a file- you will add [[[RUNNING SCRIPT]]] to the end of your response.<|eot_id|>\n\n';
         for(let i = 0; i < chats.length; i++) {
             if(i % 0) {
-                fullHistory += "### Assistant\n" + chats[i] + "\n\n";
+                fullHistory += "<|start_header_id|>assistant<|end_header_id|>\n" + chats[i] + "<|eot_id|>\n";
             } else {
-                fullHistory += "### User Message\n" + chats[i] + "\n\n";
+                fullHistory += "<|start_header_id|>user<|end_header_id|>\n" + chats[i] + "<|eot_id|>\n";
             }
         }
 
@@ -60,7 +60,7 @@ export default function Home() {
                     const excerpt = fileContent.substring(0, 500); // Get first 500 characters
                     attchFile += `\n[Small Incomplete Excerpt from attached file]:\n${excerpt}\n`;
                 }
-                fullHistory += "### User Message\n" + sanitized + attchFile + "\n\n### Assistant\n";
+                fullHistory += "<|start_header_id|>user<|end_header_id|>\n" + sanitized + attchFile + "\n<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n";
                 console.log(fullHistory);
                 await sendRequest(fullHistory);
             };
@@ -69,7 +69,7 @@ export default function Home() {
               console.error("Error reading file:", error);
           }
         } else {
-          fullHistory += "### User Message\n" + sanitized + attchFile + "\n\n### Assistant\n";
+          fullHistory += "<|start_header_id|>user<|end_header_id|>\n" + sanitized + attchFile + "\n<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n";
           console.log(fullHistory);
           await sendRequest(fullHistory);
         }
@@ -163,7 +163,7 @@ export default function Home() {
                       <p key={idx} className="mb-2 text-black divide-y px-3.5 py-2" style={{ wordBreak: "break-word" }} dangerouslySetInnerHTML={{ __html: chat + "\n"}}></p>
                   ))
               ) : (
-                  <p className="text-gray-500">This project has been deactivated as I rework my Infrastructure.</p>
+                  <p className="text-gray-500">Ask me anything.</p>
               )}
           </div>
 
