@@ -10,7 +10,7 @@ function escapeHTML(unsafe) {
 }
 
 function formatChat(message, document) {
-    let formatted = escapeHTML(message).replace(/```([a-zA-Z0-9_]+)\n/g, '<pre class="overflow-auto w-full"><code class="language-$1 whitespace-pre-wrap">');
+    let formatted = escapeHTML(message.content).replace(/```([a-zA-Z0-9_]+)\n/g, '<pre class="overflow-auto w-full"><code class="language-$1 whitespace-pre-wrap">');
     formatted = formatted.replace(/```/g, '</code></pre>');
 
     const lastPre = formatted.lastIndexOf('<pre>');
@@ -25,15 +25,18 @@ function formatChat(message, document) {
         hljs.highlightElement(block);
     });
 
-    if (message.startsWith('You:')) {
-        formatted = formatted.replace(/You:/i, '<strong>You:</strong>');
+    if (message.role == 'user') {
+        formatted = '<strong>You:</strong>' + formatted;
         formatted = '<p style="color: black;">' + formatted + '</p>';
     }
 
     // Check if message starts with 'AI:'
-    else if (message.startsWith('AI:')) {
-        formatted = formatted.replace(/AI:/i, '<strong>AI:</strong>');
+    else if (message.role == 'assistant') {
+        formatted = '<strong>AI:</strong>' + formatted;
         formatted = '<p style="color: gray;">' + formatted + '</p>';
+    }
+    else {
+        return;
     }
     return formatted;
 }

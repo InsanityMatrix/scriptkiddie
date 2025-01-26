@@ -9,7 +9,7 @@ import Modal from 'react-modal';
 //Modal.setAppElement('#root');
 
 export default function Home() {
-    const [chats, setChats] = useState([]);
+    const [chats, setChats] = useState([{role: 'system', content: 'You are an intelligent programming assistant.'}]);
     const [prompt, setPrompt] = useState('');
     const [attachment, setAttachment] = useState(null);
     const [formattedChats, setFormattedChats] = useState('');
@@ -32,50 +32,14 @@ export default function Home() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setChats(prev => [...prev, `You: ${prompt}`]);
+        let nChats = [...chats, {role: 'user', content: prompt}];
+        setChats(prev => [...prev, { role: 'user', content: prompt }]);
         setPrompt('');
         outputRef.current = '';
         stopRef.current = false;
         setOutputState('');
-        const sanitized = prompt.endsWith(':') ? prompt : prompt + ':';
-
-        let fullHistory = '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\nYou are an intelligent programming assistant. If you are asked to run a script, or run a script on a file- you will add [[[RUNNING SCRIPT]]] to the end of your response.<|eot_id|>\n\n';
-        for(let i = 0; i < chats.length; i++) {
-            if(i % 0) {
-                fullHistory += "<|start_header_id|>assistant<|end_header_id|>\n" + chats[i] + "<|eot_id|>\n";
-            } else {
-                fullHistory += "<|start_header_id|>user<|end_header_id|>\n" + chats[i] + "<|eot_id|>\n";
-            }
-        }
-
-        let attchFile = attachment ? "[User has an attached file at location: ./" + attachment.name + "]" : "";
-        if (attachment) {
-          try {
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                const fileContent = event.target.result;
-                const isASCII = /^[\x00-\x7F]*$/.test(fileContent);
-
-                if (isASCII) {
-                    const excerpt = fileContent.substring(0, 500); // Get first 500 characters
-                    attchFile += `\n[Small Incomplete Excerpt from attached file]:\n${excerpt}\n`;
-                }
-                fullHistory += "<|start_header_id|>user<|end_header_id|>\n" + sanitized + attchFile + "\n<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n";
-                console.log(fullHistory);
-                await sendRequest(fullHistory);
-            };
-            reader.readAsText(attachment);
-          } catch (error) {
-              console.error("Error reading file:", error);
-          }
-        } else {
-          fullHistory += "<|start_header_id|>user<|end_header_id|>\n" + sanitized + attchFile + "\n<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n";
-          console.log(fullHistory);
-          await sendRequest(fullHistory);
-        }
-       
+        sendRequest(nChats);
     };
-
     const sendRequest = async (fullHistory) => {
       try {
         const response = await fetch('/api/llm', {
@@ -84,7 +48,7 @@ export default function Home() {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              prompt: fullHistory,
+              messages: fullHistory,
               stream: true,
             })
           });
@@ -92,6 +56,8 @@ export default function Home() {
           const reader = response.body.getReader();
           let receivedLength = 0; // bytes received by now
           let chunks = []; // array of received binary chunks (comprises the body)
+          let endthink = false;
+          setOutputState(outputRef.current += 'Thinking...\n');
           while(true) {
             const {done, value} = await reader.read();
         
@@ -100,37 +66,65 @@ export default function Home() {
             }
             chunks.push(value);
             receivedLength += value.length;
-        
-            let chunkText = new TextDecoder("utf-8").decode(value, {stream: true});
-            if (chunkText !== "[[[[[STOP]]]]]") {
-              outputRef.current += chunkText;
-              setOutputState(outputRef.current);
-            } else {
-              let aiOutput = outputRef.current;
-              //TODO: If attachment, capture script output and run it on the file- then send back through AI.
-              if(aiOutput.endsWith("[[[RUNNING SCRIPT]]]")) {
-                try {
-                  const response = await fetch('/api/python', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ aiOutput: aiOutput }),
-                  });
-                  const data = await response.json();
-                  if (response.ok) {
-                    aiOutput = data.result;
+            
+            let chunkJSONS = new TextDecoder("utf-8").decode(value, {stream: true});
+            try {
+              let chunksSplit = chunkJSONS.split('\n').map(line => line.replace(/,$/, ""));
+              if(chunksSplit[chunksSplit.length-1] == "") {
+                chunksSplit = chunksSplit.slice(0, chunksSplit.length-1);
+              }
+              let chunksJSON = chunksSplit.map(line => JSON.parse(line));
+              //console.log(`JSON = ${chunkJSONS}`);
+              for(let j = 0; j <= chunksJSON.length; j++) {
+                let chunkJSON = chunksJSON[j];
+                console.log(`NCHUNK: ${JSON.stringify(chunkJSON)}`)
+                let words = chunkJSON.choices;
+                for(let i = 0; i < words.length; i++) {
+                  let word = words[i];
+                  let chunkText = word.delta.content;
+                  console.log(`Value: ${chunkText}`);
+                  if (!endthink) {
+                    endthink = chunkText.includes("</think>");
                   } else {
-                    console.error('Error:', data.error);
+                    if (word.finish_reason == null) {
+                      outputRef.current += chunkText;
+                      setOutputState(outputRef.current);
+                    } else {
+                      let aiOutput = outputRef.current;
+                      //TODO: If attachment, capture script output and run it on the file- then send back through AI.
+                      if(aiOutput.endsWith("[[[RUNNING SCRIPT]]]")) {
+                        try {
+                          const response = await fetch('/api/python', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ aiOutput: aiOutput }),
+                          });
+                          const data = await response.json();
+                          if (response.ok) {
+                            aiOutput = data.result;
+                          } else {
+                            console.error('Error:', data.error);
+                          }
+                        } catch (error) {
+                          console.error('Error:', error);
+                        }
+                      }
+                      console.log('Saving');
+                      setChats(prev => [...prev, { role: 'assistant', content: aiOutput }]);
+                      outputRef.current = '';
+                      setOutputState('');
+                    }
                   }
-                } catch (error) {
-                  console.error('Error:', error);
                 }
               }
-              setChats(prev => [...prev, `AI: ${aiOutput}`]);
-              outputRef.current = '';
-              setOutputState('');
+              
+            } catch (parseError) {
+              console.error("JSON parse error on chunk: ", chunkJSONS);
+              console.error(`Error: ${parseError}`);
             }
+            
           }
       } catch (error) {
           console.log("ERROR: " + error);
@@ -146,7 +140,7 @@ export default function Home() {
       }
 
       if(outputRef.current && outputRef.current !== '') {
-        fChats.push(formatChat('AI: ' + outputRef.current, document))
+        fChats.push(formatChat({ role: 'assistant', content: outputRef.current }, document))
       }
       //cumulativeOutputRef.current = fChats;
       setFormattedChats(fChats);
