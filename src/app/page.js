@@ -9,7 +9,7 @@ import Modal from 'react-modal';
 //Modal.setAppElement('#root');
 
 export default function Home() {
-    const [chats, setChats] = useState([{role: 'system', content: 'You are an intelligent programming assistant.'}]);
+    const [chats, setChats] = useState([{role: 'system', content: 'You are an intelligent assistant named Aurora. You will do your best to aid the user in any task they wish to be performed.'}]);
     const [prompt, setPrompt] = useState('');
     const [attachment, setAttachment] = useState(null);
     const [formattedChats, setFormattedChats] = useState('');
@@ -153,7 +153,7 @@ export default function Home() {
           <div className="flex flex-grow flex-col w-full max-w-4xl bg-white rounded-t-lg shadow-md overflow-y-auto break-normal p-4 pb-6">
               {formattedChats.length ? (
                   formattedChats.map((chat, idx) => (
-                      <p key={idx} className="mb-2 text-black divide-y px-3.5 py-2" style={{ wordBreak: "break-word" }} dangerouslySetInnerHTML={{ __html: chat + "\n"}}></p>
+                      <p key={idx} className="mb-2 text-black px-3.5 py-2" style={{ wordBreak: "break-word" }} dangerouslySetInnerHTML={{ __html: chat + "\n"}}></p>
                   ))
               ) : (
                   <p className="text-gray-500">Ask me anything.</p>
