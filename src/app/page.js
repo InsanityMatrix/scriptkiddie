@@ -70,53 +70,60 @@ export default function Home() {
             let chunkJSONS = new TextDecoder("utf-8").decode(value, {stream: true});
             try {
               let chunksSplit = chunkJSONS.split('\n').map(line => line.replace(/,$/, ""));
-              if(chunksSplit[chunksSplit.length-1] == "") {
+              if(chunksSplit[chunksSplit.length-1] == "" || chunksSplit[chunksSplit.length-1] == undefined) {
                 chunksSplit = chunksSplit.slice(0, chunksSplit.length-1);
               }
               let chunksJSON = chunksSplit.map(line => JSON.parse(line));
               //console.log(`JSON = ${chunkJSONS}`);
               for(let j = 0; j <= chunksJSON.length; j++) {
                 let chunkJSON = chunksJSON[j];
-                console.log(`NCHUNK: ${JSON.stringify(chunkJSON)}`)
-                let words = chunkJSON.choices;
-                for(let i = 0; i < words.length; i++) {
-                  let word = words[i];
-                  let chunkText = word.delta.content;
-                  console.log(`Value: ${chunkText}`);
-                  if (!endthink) {
-                    endthink = chunkText.includes("</think>");
-                  } else {
-                    if (word.finish_reason == null) {
-                      outputRef.current += chunkText;
-                      setOutputState(outputRef.current);
+                if (!chunkJSON) {
+                  continue;
+                }
+                try {
+                  let words = chunkJSON.choices;
+                  for(let i = 0; i < words.length; i++) {
+                    let word = words[i];
+                    let chunkText = word.delta.content;
+                    
+                    if (!endthink) {
+                      endthink = chunkText.includes("</think>");
                     } else {
-                      let aiOutput = outputRef.current;
-                      //TODO: If attachment, capture script output and run it on the file- then send back through AI.
-                      if(aiOutput.endsWith("[[[RUNNING SCRIPT]]]")) {
-                        try {
-                          const response = await fetch('/api/python', {
-                            method: 'POST',
-                            headers: {
-                              'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({ aiOutput: aiOutput }),
-                          });
-                          const data = await response.json();
-                          if (response.ok) {
-                            aiOutput = data.result;
-                          } else {
-                            console.error('Error:', data.error);
+                      if (word.finish_reason == null) {
+                        outputRef.current += chunkText;
+                        setOutputState(outputRef.current);
+                      } else {
+                        let aiOutput = outputRef.current;
+                        //TODO: If attachment, capture script output and run it on the file- then send back through AI.
+                        if(aiOutput.endsWith("[[[RUNNING SCRIPT]]]")) {
+                          try {
+                            const response = await fetch('/api/python', {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                              },
+                              body: JSON.stringify({ aiOutput: aiOutput }),
+                            });
+                            const data = await response.json();
+                            if (response.ok) {
+                              aiOutput = data.result;
+                            } else {
+                              console.error('Error:', data.error);
+                            }
+                          } catch (error) {
+                            console.error('Error:', error);
                           }
-                        } catch (error) {
-                          console.error('Error:', error);
                         }
+                        console.log('Saving');
+                        setChats(prev => [...prev, { role: 'assistant', content: aiOutput }]);
+                        outputRef.current = '';
+                        setOutputState('');
                       }
-                      console.log('Saving');
-                      setChats(prev => [...prev, { role: 'assistant', content: aiOutput }]);
-                      outputRef.current = '';
-                      setOutputState('');
                     }
                   }
+                } catch (useError) {
+                  console.error(`JSON mapping error on: ${chunkJSON}`);
+                  console.error(`Error: ${useError}`);
                 }
               }
               
